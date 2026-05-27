@@ -10,6 +10,8 @@ from tuitris.tetromino import COLORS, SHAPES, Piece, PieceType, color
 
 CELL_FILLED = "██"
 CELL_EMPTY = "  "
+CELL_GHOST = "░░"
+GHOST_STYLE = "grey35"
 
 
 def render_board(game: Game) -> Text:
@@ -51,7 +53,7 @@ def render_board(game: Game) -> Text:
             elif locked is not None:
                 text.append(CELL_FILLED, style=color(locked))
             elif (vr, c) in ghost_cells:
-                text.append(CELL_FILLED, style=f"dim {current_color}")
+                text.append(CELL_GHOST, style=GHOST_STYLE)
             else:
                 text.append(CELL_EMPTY, style="on grey11")
         if vr < len(grid) - 1:
