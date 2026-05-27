@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -10,6 +12,8 @@ from textual.widgets import Static
 
 from tuitris.game import Game
 from tuitris.render import render_board, render_next
+from tuitris.scores import DEFAULT_SCORES_PATH, HighScore, HighScores
+from tuitris.screens import HighScoresScreen, InitialsScreen
 
 
 class BoardWidget(Static):
@@ -59,8 +63,6 @@ class SidebarWidget(Static):
 
         if self.game.state == "game_over":
             text.append("GAME OVER\n", style="bold red")
-            text.append("R restart\n", style="dim")
-            text.append("Q quit\n", style="dim")
         elif self.game.state == "paused":
             text.append("PAUSED\n", style="bold yellow")
             text.append("P resume\n", style="dim")
@@ -100,16 +102,17 @@ class TuitrisApp(App):
         Binding("up", "rotate_cw", "rotate", show=False),
         Binding("k", "rotate_cw", "rotate", show=False),
         Binding("p", "pause", "pause", show=False),
-        Binding("r", "restart", "restart", show=False),
         Binding("q", "quit", "quit", show=False),
         Binding("ctrl+c", "quit", "quit", show=False),
     ]
 
-    def __init__(self) -> None:
+    def __init__(self, scores_path: Path = DEFAULT_SCORES_PATH) -> None:
         super().__init__()
         self.game = Game()
+        self.scores = HighScores.load(scores_path)
         self._tick_timer = None
         self._last_level = self.game.level
+        self._game_over_handled = False
 
     def compose(self) -> ComposeResult:
         with Horizontal():
@@ -136,6 +139,45 @@ class TuitrisApp(App):
         if self.game.level != self._last_level:
             self._last_level = self.game.level
             self._start_tick_timer()
+        if self.game.state == "game_over" and not self._game_over_handled:
+            self._game_over_handled = True
+            self._handle_game_over()
+
+    def _handle_game_over(self) -> None:
+        score = self.game.score
+        if self.scores.qualifies(score):
+            self.push_screen(InitialsScreen(score), self._on_initials_done)
+        else:
+            self.push_screen(HighScoresScreen(self.scores), self._on_scores_dismissed)
+
+    def _on_initials_done(self, initials: str | None) -> None:
+        if not initials:
+            self.push_screen(HighScoresScreen(self.scores), self._on_scores_dismissed)
+            return
+        entry = HighScore(
+            initials=initials,
+            score=self.game.score,
+            lines=self.game.lines_cleared,
+            level=self.game.level,
+        )
+        rank = self.scores.insert(entry)
+        self.push_screen(
+            HighScoresScreen(self.scores, new_rank=rank),
+            self._on_scores_dismissed,
+        )
+
+    def _on_scores_dismissed(self, result: str | None) -> None:
+        if result == "quit":
+            self.exit()
+        else:
+            self._restart_game()
+
+    def _restart_game(self) -> None:
+        self.game.restart()
+        self._last_level = self.game.level
+        self._game_over_handled = False
+        self._start_tick_timer()
+        self._after_change()
 
     def action_move_left(self) -> None:
         self.game.move(-1)
@@ -164,13 +206,6 @@ class TuitrisApp(App):
     def action_pause(self) -> None:
         if self.game.state in ("playing", "paused"):
             self.game.toggle_pause()
-            self._after_change()
-
-    def action_restart(self) -> None:
-        if self.game.state == "game_over":
-            self.game.restart()
-            self._last_level = self.game.level
-            self._start_tick_timer()
             self._after_change()
 
 
